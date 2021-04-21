@@ -1,34 +1,84 @@
 import * as PIXI from "pixi.js";
 import "./style.css";
+import Fish from "./Fish";
+import Stimuli from "./Stimuli";
 
 declare const VERSION: string;
 
 const gameWidth = 800;
-const gameHeight = 600;
+const gameHeight = 800;
 
 console.log(`Welcome from pixi-typescript-boilerplate ${VERSION}`);
 
 const app = new PIXI.Application({
-    backgroundColor: 0xd3d3d3,
+    backgroundColor: 0x000000,
     width: gameWidth,
     height: gameHeight,
 });
 
 const stage = app.stage;
 
+const fishArray: Fish[] = [];
+const stimuli = new Stimuli();
+
 window.onload = async (): Promise<void> => {
     await loadGameAssets();
-
+    const keyObject = keyboard("Control");
+    keyObject.press = () => {
+        stimuli.activated = true;
+        return null;
+    };
+    keyObject.release = () => {
+        stimuli.activated = false;
+        return null;
+    };
     document.body.appendChild(app.view);
-
     resizeCanvas();
-
-    const birdFromSprite = getBird();
-    birdFromSprite.anchor.set(0.5, 0.5);
-    birdFromSprite.position.set(gameWidth / 2, gameHeight / 2);
-
-    stage.addChild(birdFromSprite);
+    stage.interactive = true;
+    stage.hitArea = new PIXI.Rectangle(0, 0, gameWidth, gameWidth);
+    stage.on("pointertap", (e) => addFish(e));
+    stage.on("pointermove", (e) => moveStimuli(e));
+    app.ticker.add((delta) => simulationLoop(delta));
 };
+
+function simulationLoop(delta: number): void {
+    let groupXPos = 0;
+    let groupYPos = 0;
+    fishArray.forEach((fish) => {
+        groupXPos += fish.xPos;
+        groupYPos += fish.yPos;
+    });
+    console.log(groupXPos + "," + groupYPos);
+    groupXPos = groupXPos / fishArray.length;
+    groupYPos = groupYPos / fishArray.length;
+
+    fishArray.forEach((fish) => {
+        fish.scanEnvironment(fishArray, stimuli, groupXPos, groupYPos);
+        fish.move(delta);
+        fish.detectCollision();
+    });
+}
+
+function addFish(e: any): void {
+    const pos = e.data.global;
+    const gr = new PIXI.Graphics();
+    gr.beginFill(0xffffff);
+    gr.lineStyle(0);
+    gr.drawCircle(pos.x, pos.y, 3);
+    console.log(pos.x + "," + pos.y);
+    gr.endFill();
+
+    const texture = app.renderer.generateTexture(gr);
+    const circle = new PIXI.Sprite(texture);
+    stage.addChild(circle);
+    fishArray.push(new Fish(pos.x, pos.y, circle));
+}
+
+function moveStimuli(e: any): void {
+    const pos = e.data.global;
+    stimuli.xPos = pos.x;
+    stimuli.yPos = pos.y;
+}
 
 async function loadGameAssets(): Promise<void> {
     return new Promise((res, rej) => {
@@ -59,17 +109,43 @@ function resizeCanvas(): void {
     window.addEventListener("resize", resize);
 }
 
-function getBird(): PIXI.AnimatedSprite {
-    const bird = new PIXI.AnimatedSprite([
-        PIXI.Texture.from("birdUp.png"),
-        PIXI.Texture.from("birdMiddle.png"),
-        PIXI.Texture.from("birdDown.png"),
-    ]);
+function keyboard(value: string) {
+    const key = {
+        value: value,
+        isDown: false,
+        isUp: true,
+        press: () => null,
+        release: () => null,
+        downHandler: (event: any) => {
+            if (event.key === key.value) {
+                if (key.isUp && key.press) key.press();
+                key.isDown = true;
+                key.isUp = false;
+                event.preventDefault();
+            }
+        },
+        upHandler: (event: any) => {
+            if (event.key === key.value) {
+                if (key.isDown && key.release) key.release();
+                key.isDown = false;
+                key.isUp = true;
+                event.preventDefault();
+            }
+        },
+        unsubscribe: () => {
+            window.removeEventListener("keydown", downListener);
+            window.removeEventListener("keyup", upListener);
+        },
+    };
 
-    bird.loop = true;
-    bird.animationSpeed = 0.1;
-    bird.play();
-    bird.scale.set(3);
+    //Attach event listeners
+    const downListener = key.downHandler.bind(key);
+    const upListener = key.upHandler.bind(key);
 
-    return bird;
+    window.addEventListener("keydown", downListener, false);
+    window.addEventListener("keyup", upListener, false);
+
+    // Detach event listeners
+
+    return key;
 }
