@@ -2,18 +2,16 @@ import * as PIXI from "pixi.js";
 import "./style.css";
 import Fish from "./Fish";
 import Stimuli from "./Stimuli";
+import { WIDTH, HEIGHT } from "./gameSettings";
 
 declare const VERSION: string;
-
-const gameWidth = 800;
-const gameHeight = 800;
 
 console.log(`Welcome from pixi-typescript-boilerplate ${VERSION}`);
 
 const app = new PIXI.Application({
-    backgroundColor: 0x000000,
-    width: gameWidth,
-    height: gameHeight,
+    backgroundColor: 0x111111,
+    width: WIDTH,
+    height: HEIGHT,
 });
 
 const stage = app.stage;
@@ -33,45 +31,42 @@ window.onload = async (): Promise<void> => {
         return null;
     };
     document.body.appendChild(app.view);
-    resizeCanvas();
+    // resizeCanvas();
     stage.interactive = true;
-    stage.hitArea = new PIXI.Rectangle(0, 0, gameWidth, gameWidth);
+    stage.hitArea = new PIXI.Rectangle(0, 0, WIDTH, HEIGHT);
     stage.on("pointertap", (e) => addFish(e));
     stage.on("pointermove", (e) => moveStimuli(e));
-    app.ticker.add((delta) => simulationLoop(delta));
+    app.ticker.add((delta) => simulationLoop(delta / 50));
 };
 
 function simulationLoop(delta: number): void {
-    let groupXPos = 0;
-    let groupYPos = 0;
     fishArray.forEach((fish) => {
-        groupXPos += fish.xPos;
-        groupYPos += fish.yPos;
-    });
-    console.log(groupXPos + "," + groupYPos);
-    groupXPos = groupXPos / fishArray.length;
-    groupYPos = groupYPos / fishArray.length;
-
-    fishArray.forEach((fish) => {
-        fish.scanEnvironment(fishArray, stimuli, groupXPos, groupYPos);
-        fish.move(delta);
-        fish.detectCollision();
+        const [visibleFishArray, visibleFishAvgPos] = fish.updateFish(fishArray, delta);
     });
 }
 
 function addFish(e: any): void {
     const pos = e.data.global;
     const gr = new PIXI.Graphics();
+
     gr.beginFill(0xffffff);
     gr.lineStyle(0);
-    gr.drawCircle(pos.x, pos.y, 3);
+    gr.drawPolygon([-5, 0, -7, -7, 7, 0, -7, 7]);
     console.log(pos.x + "," + pos.y);
     gr.endFill();
 
+    const gr2 = new PIXI.Graphics();
+    gr2.beginFill(0xffffff);
+    gr2.lineStyle(0);
+    gr2.drawCircle(0, 0, 150);
+    gr2.endFill();
+    const circleTexture = app.renderer.generateTexture(gr2);
+    const circle = new PIXI.Sprite(circleTexture);
+
     const texture = app.renderer.generateTexture(gr);
-    const circle = new PIXI.Sprite(texture);
-    stage.addChild(circle);
-    fishArray.push(new Fish(pos.x, pos.y, circle));
+    const triangle = new PIXI.Sprite(texture);
+    stage.addChild(triangle);
+    fishArray.push(new Fish([pos.x, pos.y], triangle, false));
 }
 
 function moveStimuli(e: any): void {
@@ -100,8 +95,8 @@ async function loadGameAssets(): Promise<void> {
 function resizeCanvas(): void {
     const resize = () => {
         app.renderer.resize(window.innerWidth, window.innerHeight);
-        app.stage.scale.x = window.innerWidth / gameWidth;
-        app.stage.scale.y = window.innerHeight / gameHeight;
+        app.stage.scale.x = window.innerWidth / WIDTH;
+        app.stage.scale.y = window.innerHeight / HEIGHT;
     };
 
     resize();

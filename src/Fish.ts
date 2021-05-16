@@ -1,215 +1,156 @@
-import Stimuli from "./Stimuli";
 import * as PIXI from "pixi.js";
+import Vector2, { randomUnitVect, distance } from "./Vector2";
+import { WIDTH, HEIGHT } from "./gameSettings";
 
 class Fish {
-    xPos: number; //x coord
-    yPos: number; //y coord
-    speed: number; //unit per frame
-    directionVector: [number, number]; //radians
-    scareDistance: number; //unit
-    groupDistance: number; //unit
-    groupCloseness: number; // group collision avoidance
-    lagTime: number; // frames
-    closestFish: Fish | null;
-    nextLeadingFish: Fish | null;
     sprite: PIXI.Sprite;
     leaderScore: number;
+    spectate: boolean;
+
+    //force model
+    maxSpeed = 120;
+    pos: Vector2;
+    velocity: Vector2 = randomUnitVect();
+
+    //visible cone
+    visibleRadius = 150;
+    visibleAngle = 1.5 * Math.PI;
+
     stableSpeed = 1;
     excitedSpeed = 10;
-    constructor(xPos = 0, yPos = 0, sprite: PIXI.Sprite) {
-        this.speed = 0;
-        this.directionVector = [0, 1];
-        this.scareDistance = 50;
-        this.groupDistance = 1000;
-        this.groupCloseness = 30;
-        this.lagTime = 5;
+    constructor(pos: [number, number], sprite: PIXI.Sprite, spectate: boolean) {
+        this.spectate = spectate;
         this.leaderScore = Math.random();
-        this.xPos = sprite.x = xPos;
-        this.yPos = sprite.y = yPos;
-        this.closestFish = null;
-        this.nextLeadingFish = null;
+        this.pos = new Vector2(pos);
         this.sprite = sprite;
+        [this.sprite.x, this.sprite.y] = this.pos.toArray();
+        this.sprite.anchor.set(0.5);
+        this.sprite.rotation = this.velocity.angle();
+        console.log((this.velocity.angle() * 180) / Math.PI);
     }
 
     move(deltaTime: number): void {
-        this.yPos += this.getYSpeed() * deltaTime;
-        this.xPos += this.getXSpeed() * deltaTime;
-        this.sprite.y = this.yPos;
-        this.sprite.x = this.xPos;
+        this.pos = this.pos.add([this.velocity.scale(deltaTime)]);
+        this.sprite.y = this.pos.y;
+        this.sprite.x = this.pos.x;
+        this.sprite.rotation = this.velocity.angle();
     }
 
-    getYSpeed(): number {
-        const angle = Math.atan2(this.directionVector[1], this.directionVector[0]);
-        const ySpeed = this.speed * Math.sin(angle);
-        return ySpeed;
+    backwardsVelocity(): Vector2 {
+        return this.velocity.normalize().scale(-this.visibleRadius);
     }
 
-    getXSpeed(): number {
-        const angle = Math.atan2(this.directionVector[1], this.directionVector[0]);
-        const xSpeed = this.speed * Math.cos(angle);
-        return xSpeed;
+    leftVisibleVect(): Vector2 {
+        return this.backwardsVelocity().rotate((2 * Math.PI - this.visibleAngle) / 2, true);
     }
 
-    turn(direction: [number, number]): void {
-        this.directionVector = direction;
+    rightVisibleVect(): Vector2 {
+        return this.backwardsVelocity().rotate((2 * Math.PI - this.visibleAngle) / 2, false);
     }
 
-    steer(): void {
-        let angle = Math.random() * (Math.PI / 12) - Math.random() * (Math.PI / 12);
-        angle = angle + Math.atan2(this.directionVector[1], this.directionVector[0]);
-        const y = Math.sin(angle);
-        const x = Math.cos(angle);
-        this.directionVector = [x, y];
+    steerClockwise(strength: number): Vector2 {
+        const rightVect = new Vector2([-this.velocity.y, this.velocity.x]).normalize();
+        return rightVect.scale(strength);
     }
 
-    setNextLeaderFish(fish: Fish): void {
-        this.nextLeadingFish = fish;
+    steerCounterClockwise(strength: number): Vector2 {
+        const rightVect = new Vector2([this.velocity.y, -this.velocity.x]).normalize();
+        return rightVect.scale(strength);
     }
 
-    setClosestFish(fish: Fish): void {
-        this.closestFish = fish;
+    steerAwayFromPoint(point: [number, number], strength: number): Vector2 {
+        const vectToPoint = new Vector2([this.pos.x - point[0], this.pos.y - point[1]]);
+        const dist = vectToPoint.magnitude();
+        const maxDist = this.visibleRadius;
+        const strengthSquared = strength * (maxDist - dist) ** 2;
+
+        const onRight = this.velocity.cross(vectToPoint) < 0;
+
+        if (onRight) return this.steerCounterClockwise(strengthSquared);
+        else return this.steerClockwise(strengthSquared);
     }
 
-    turnToPoint(x: number, y: number): void {
-        this.directionVector = getVectorFromAToB(this.xPos, this.yPos, x, y);
+    steerToPoint(point: [number, number], strength: number): Vector2 {
+        const vectToPoint = new Vector2([this.pos.x - point[0], this.pos.x - point[1]]);
+        const onRight = this.velocity.cross(vectToPoint) < 0;
+        const onLeft = this.velocity.cross(vectToPoint) > 0;
+        if (onRight) return this.steerCounterClockwise(strength);
+        else if (onLeft) return this.steerClockwise(strength);
+        else return new Vector2([0, 0]);
     }
 
-    turnToClosestFish(): void {
-        try {
-            if (this.closestFish === null) {
-                throw new Error("no closest Fish");
-            }
-            this.directionVector = getVectorFromAToB(
-                this.xPos,
-                this.yPos,
-                this.closestFish.xPos,
-                this.closestFish.yPos
-            );
-        } catch (e) {
-            console.log(e);
-        }
+    isVisible(targetFish: Fish): boolean {
+        const vect = new Vector2([targetFish.pos.x - this.pos.x, targetFish.pos.y - this.pos.y]);
+        const outsideLeftBoundary = this.leftVisibleVect().cross(vect) <= 0;
+        const outsideRightBoundary = this.rightVisibleVect().cross(vect) >= 0;
+        if (outsideLeftBoundary || outsideRightBoundary) return true;
+        else return false;
     }
 
-    turnAwayFromClosestFish(): void {
-        try {
-            if (this.closestFish === null) {
-                throw new Error("no closest Fish");
-            }
-            this.directionVector = getVectorFromAToB(
-                this.closestFish.xPos,
-                this.closestFish.yPos,
-                this.xPos,
-                this.yPos
-            );
-        } catch (e) {
-            console.log(e);
-        }
-    }
+    updateFish(fishArray: Fish[], deltaTime: number): [Fish[], Vector2] {
+        let acceleration = new Vector2([0, 0]);
 
-    getDistanceToClosestFish(): number {
-        try {
-            if (this.closestFish === null) {
-                throw new Error("no closest Fish");
-            }
-            return distanceFromAToB(this.xPos, this.yPos, this.closestFish.xPos, this.closestFish.yPos);
-        } catch (e) {
-            console.log(e);
-            return 0;
-        }
-    }
+        let closestFish: Fish | undefined;
+        let distanceToClosestFish = 1000000000;
 
-    scanEnvironment(allFish: Fish[], stimuli: Stimuli, groupXPos: number, groupYPos: number): void {
-        allFish.forEach((fish: Fish) => {
+        const visibleFish: Fish[] = [];
+        let visibleFishAvgPos = new Vector2([0, 0]);
+        let visibleFishVelSum = new Vector2([0, 0]);
+
+        fishArray.forEach((fish: Fish) => {
             if (fish != this) {
-                const distanceToFish = distanceFromAToB(this.xPos, this.yPos, fish.xPos, fish.yPos);
-                if (this.closestFish === null) {
-                    this.closestFish = fish;
-                } else if (distanceToFish < this.getDistanceToClosestFish()) {
-                    this.closestFish = fish;
-                    if (this.closestFish.speed >= this.excitedSpeed) {
-                        this.directionVector = this.closestFish.directionVector;
-                        this.speed = fish.speed;
-                    }
-                }
+                const distanceToFish = distance(this.pos.toArray(), fish.pos.toArray());
 
-                if (fish.leaderScore > this.leaderScore) {
-                    this.setNextLeaderFish(fish);
+                if (distanceToFish <= this.visibleRadius && this.isVisible(fish)) {
+                    visibleFish.push(fish);
+                    visibleFishVelSum = visibleFishVelSum.add([fish.velocity]);
+                    visibleFishAvgPos = visibleFishAvgPos.add([fish.pos]);
+
+                    if (distanceToClosestFish > distanceToFish) {
+                        distanceToClosestFish = distanceToFish;
+                        closestFish = fish;
+                    }
                 }
             }
         });
-        let careStimuli = false;
-        if (!stimuli.activated) {
-            careStimuli = false;
-        } else {
-            const distanceToStimuli = distanceFromAToB(this.xPos, this.yPos, stimuli.xPos, stimuli.yPos);
-            if (distanceToStimuli < this.scareDistance) {
-                this.turn(getVectorFromAToB(stimuli.xPos, stimuli.yPos, this.xPos, this.yPos));
-                this.speed = this.excitedSpeed;
-                careStimuli = true;
-            }
+
+        const visibleFishNum = visibleFish.length;
+        if (visibleFishNum > 0 && closestFish) {
+            visibleFishAvgPos = visibleFishAvgPos.scale(1 / visibleFishNum);
+
+            const steerAwayFromFishForce = this.steerAwayFromPoint(closestFish.pos.toArray(), 0.02);
+            const alignForce = this.steerToPoint(visibleFishVelSum.toArray(), 100);
+            const cohesionForce = this.steerToPoint(visibleFishAvgPos.toArray(), 200);
+
+            acceleration = acceleration.add([steerAwayFromFishForce]);
+            acceleration = acceleration.add([alignForce]);
+            acceleration = acceleration.add([cohesionForce]);
         }
-        if (!careStimuli) {
-            let careClosestFish = false;
-            if (this.closestFish) {
-                if (this.getDistanceToClosestFish() < this.groupCloseness) {
-                    careClosestFish = true;
-                    this.turnAwayFromClosestFish();
-                    this.speed = this.stableSpeed;
-                } else {
-                    this.speed = this.stableSpeed;
-                    if (Math.random() > 0.9) {
-                        this.steer();
-                    }
-                }
-            } else {
-                careClosestFish = false;
-            }
-            if (!careClosestFish) {
-                if (this.nextLeadingFish) {
-                    if (
-                        distanceFromAToB(this.xPos, this.yPos, this.nextLeadingFish.xPos, this.nextLeadingFish.yPos) >
-                        this.groupDistance
-                    ) {
-                        this.turnToPoint(this.nextLeadingFish.xPos, this.nextLeadingFish.yPos);
-                        this.speed = this.stableSpeed;
-                    }
-                } else {
-                    this.speed = this.stableSpeed;
-                    if (Math.random() > 0.9) {
-                        this.steer();
-                    }
-                }
-            }
-        }
+
+        this.velocity = this.velocity.add([acceleration.scale(deltaTime)]);
+        this.velocity = this.velocity.clamp(0, this.maxSpeed);
+
+        this.move(deltaTime);
+        this.pos = this.avoidCollision();
+
+        return [visibleFish, visibleFishAvgPos];
     }
 
-    detectCollision(): void {
-        if (this.xPos < 0) {
-            this.xPos = 0;
-            this.directionVector = [-this.directionVector[0], this.directionVector[1]];
+    avoidCollision(): Vector2 {
+        if (this.pos.x < 0) {
+            return new Vector2([WIDTH, HEIGHT - this.pos.y]);
         }
-        if (this.yPos < 0) {
-            this.yPos = 0;
-            this.directionVector = [this.directionVector[0], -this.directionVector[1]];
+        if (this.pos.y < 0) {
+            return new Vector2([WIDTH - this.pos.x, HEIGHT]);
         }
-        if (this.xPos > 780) {
-            this.xPos = 780;
-            this.directionVector = [-this.directionVector[0], this.directionVector[1]];
+        if (this.pos.x > WIDTH) {
+            return new Vector2([0, HEIGHT - this.pos.y]);
         }
-        if (this.yPos > 780) {
-            this.yPos = 780;
-            this.directionVector = [this.directionVector[0], -this.directionVector[1]];
+        if (this.pos.y > HEIGHT) {
+            return new Vector2([0, HEIGHT - this.pos.y]);
         }
+        return this.pos;
     }
-}
-
-function getVectorFromAToB(x1: number, y1: number, x2: number, y2: number): [number, number] {
-    const d = distanceFromAToB(x1, y1, x2, y2);
-    return [(x2 - x1) / d, (y2 - y1) / d];
-}
-
-function distanceFromAToB(x1: number, y1: number, x2: number, y2: number): number {
-    return Math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2);
 }
 
 export default Fish;
