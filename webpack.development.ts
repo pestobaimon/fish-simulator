@@ -18,7 +18,6 @@ module.exports = (env: { mode: "development" | "production" }) => {
             open: true,
             openPage: "http://localhost:8080/",
         },
-
         module: {
             rules: [
                 {
@@ -37,7 +36,7 @@ module.exports = (env: { mode: "development" | "production" }) => {
 
         output: {
             path: path.resolve(__dirname, "dist"),
-            filename: "[name].js"
+            filename: "[name].js",
         },
 
         plugins: [

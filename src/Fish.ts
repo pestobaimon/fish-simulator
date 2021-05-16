@@ -10,7 +10,7 @@ class Fish {
     //force model
     maxSpeed = 120;
     pos: Vector2;
-    velocity: Vector2 = randomUnitVect();
+    velocity: Vector2 = randomUnitVect().normalize().scale(this.maxSpeed);
 
     //visible cone
     visibleRadius = 150;
@@ -25,15 +25,14 @@ class Fish {
         this.sprite = sprite;
         [this.sprite.x, this.sprite.y] = this.pos.toArray();
         this.sprite.anchor.set(0.5);
-        this.sprite.rotation = this.velocity.angle();
-        console.log((this.velocity.angle() * 180) / Math.PI);
+        this.sprite.rotation = this.velocity.angleOrigin();
     }
 
     move(deltaTime: number): void {
         this.pos = this.pos.add([this.velocity.scale(deltaTime)]);
         this.sprite.y = this.pos.y;
         this.sprite.x = this.pos.x;
-        this.sprite.rotation = this.velocity.angle();
+        this.sprite.rotation = this.velocity.angleOrigin();
     }
 
     backwardsVelocity(): Vector2 {
@@ -59,19 +58,22 @@ class Fish {
     }
 
     steerAwayFromPoint(point: [number, number], strength: number): Vector2 {
-        const vectToPoint = new Vector2([this.pos.x - point[0], this.pos.y - point[1]]);
+        const vectToPoint = new Vector2([point[0] - this.pos.x, point[1] - this.pos.y]);
         const dist = vectToPoint.magnitude();
         const maxDist = this.visibleRadius;
         const strengthSquared = strength * (maxDist - dist) ** 2;
-
         const onRight = this.velocity.cross(vectToPoint) < 0;
+
+        console.log(`vectToPoint: ${vectToPoint.toArray()}`);
+        console.log(`velocity ${this.velocity.toArray()}}`);
+        console.log(`cross: ${this.velocity.cross(vectToPoint)}`);
 
         if (onRight) return this.steerCounterClockwise(strengthSquared);
         else return this.steerClockwise(strengthSquared);
     }
 
     steerToPoint(point: [number, number], strength: number): Vector2 {
-        const vectToPoint = new Vector2([this.pos.x - point[0], this.pos.x - point[1]]);
+        const vectToPoint = new Vector2([point[0] - this.pos.x, point[1] - this.pos.x]);
         const onRight = this.velocity.cross(vectToPoint) < 0;
         const onLeft = this.velocity.cross(vectToPoint) > 0;
         if (onRight) return this.steerCounterClockwise(strength);
@@ -118,13 +120,13 @@ class Fish {
         if (visibleFishNum > 0 && closestFish) {
             visibleFishAvgPos = visibleFishAvgPos.scale(1 / visibleFishNum);
 
-            const steerAwayFromFishForce = this.steerAwayFromPoint(closestFish.pos.toArray(), 0.02);
+            const steerAwayFromFishForce = this.steerAwayFromPoint(closestFish.pos.toArray(), 0.1);
             const alignForce = this.steerToPoint(visibleFishVelSum.toArray(), 100);
             const cohesionForce = this.steerToPoint(visibleFishAvgPos.toArray(), 200);
 
             acceleration = acceleration.add([steerAwayFromFishForce]);
-            acceleration = acceleration.add([alignForce]);
-            acceleration = acceleration.add([cohesionForce]);
+            // acceleration = acceleration.add([alignForce]);
+            // acceleration = acceleration.add([cohesionForce]);
         }
 
         this.velocity = this.velocity.add([acceleration.scale(deltaTime)]);
@@ -147,7 +149,7 @@ class Fish {
             return new Vector2([0, HEIGHT - this.pos.y]);
         }
         if (this.pos.y > HEIGHT) {
-            return new Vector2([0, HEIGHT - this.pos.y]);
+            return new Vector2([WIDTH - this.pos.x, 0]);
         }
         return this.pos;
     }

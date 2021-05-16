@@ -71,10 +71,14 @@ class Vector2 {
         else return this;
     }
 
-    angle(origin = new Vector2([1, 0])): number {
-        const dot = this.dot(origin);
-        const det = this.cross(origin);
-        return Math.atan2(det, dot);
+    angle(targetVect: Vector2): number {
+        const dy = targetVect.y - this.y;
+        const dx = targetVect.x - this.x;
+        return Math.atan2(dy, dx);
+    }
+
+    angleOrigin(): number {
+        return Math.atan2(this.y, this.x);
     }
 }
 
